@@ -1,0 +1,247 @@
+{
+  "info": {
+    "name": "API de Contas e Transferências",
+    "description": "Collection gerada a partir do OpenAPI em http://localhost:8080/v3/api-docs.\n\nOs endpoints que movimentam dinheiro exigem o header Idempotency-Key. Nas requisições desta collection ele usa {{$guid}}, então cada envio é uma operação nova. Para testar o reenvio, troque pelo valor fixo da variável idempotencyKey e envie duas vezes.\n\nA requisição de transferência guarda o id retornado na variável transferenciaId, usada pelo estorno.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "numeroConta", "value": "CONTA-001" },
+    { "key": "transferenciaId", "value": "" },
+    { "key": "idempotencyKey", "value": "chave-fixa-001" },
+    { "key": "executarEm", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Contas",
+      "description": "Depósitos e extrato",
+      "item": [
+        {
+          "name": "Realiza um depósito",
+          "request": {
+            "method": "POST",
+            "description": "O dinheiro sai da conta SISTEMA-ENTRADA e entra na conta informada. Conta BLOQUEADA aceita depósito.\n\n201 depósito efetivado\n200 Idempotency-Key já usada com o mesmo corpo\n400 CORPO_INVALIDO, IDEMPOTENCY_KEY_AUSENTE, IDEMPOTENCY_KEY_INVALIDA\n404 CONTA_NAO_ENCONTRADA\n409 CONTA_ENCERRADA, CONTA_DO_SISTEMA, IDEMPOTENCY_KEY_REUTILIZADA, CONFLITO_DE_CONCORRENCIA\n422 VALOR_INVALIDO, VALOR_ACIMA_DO_PERMITIDO",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"valor\": 250.00\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/contas/:numero/depositos",
+              "host": ["{{baseUrl}}"],
+              "path": ["contas", ":numero", "depositos"],
+              "variable": [
+                { "key": "numero", "value": "{{numeroConta}}", "description": "Número da conta, por exemplo CONTA-001" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Consulta o extrato",
+          "request": {
+            "method": "GET",
+            "description": "Movimentos em ordem decrescente de sequência. As datas usam o fuso America/Sao_Paulo. Os parâmetros de e ate são opcionais e estão desabilitados.\n\n200 extrato da conta\n400 PARAMETRO_INVALIDO\n404 CONTA_NAO_ENCONTRADA",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/contas/:numero/extrato?page=0&size=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["contas", ":numero", "extrato"],
+              "query": [
+                { "key": "de", "value": "2026-09-01", "disabled": true },
+                { "key": "ate", "value": "2026-09-30", "disabled": true },
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "20" }
+              ],
+              "variable": [
+                { "key": "numero", "value": "{{numeroConta}}" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Transferências",
+      "description": "Transferências entre contas e estornos",
+      "item": [
+        {
+          "name": "Transfere valor entre duas contas",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201 || pm.response.code === 200) {",
+                  "    pm.collectionVariables.set('transferenciaId', pm.response.json().transferenciaId);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "description": "Acima de R$ 100,00 é cobrada taxa de 1% (mínimo R$ 1,00, máximo R$ 20,00).\n\n201 transferência confirmada\n200 Idempotency-Key já usada com o mesmo corpo\n400 CORPO_INVALIDO, IDEMPOTENCY_KEY_AUSENTE, IDEMPOTENCY_KEY_INVALIDA\n404 CONTA_NAO_ENCONTRADA\n409 CONTA_ORIGEM_BLOQUEADA, CONTA_ORIGEM_ENCERRADA, CONTA_DESTINO_ENCERRADA, CONTAS_IGUAIS, CONTA_DO_SISTEMA, IDEMPOTENCY_KEY_REUTILIZADA, CONFLITO_DE_CONCORRENCIA\n422 SALDO_INSUFICIENTE, LIMITE_DIARIO_EXCEDIDO, VALOR_INVALIDO",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"contaOrigem\": \"CONTA-001\",\n  \"contaDestino\": \"CONTA-002\",\n  \"valor\": 150.00\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/transferencias",
+              "host": ["{{baseUrl}}"],
+              "path": ["transferencias"]
+            }
+          }
+        },
+        {
+          "name": "Estorna uma transferência confirmada",
+          "request": {
+            "method": "POST",
+            "description": "Cria uma nova transferência no sentido contrário e devolve também a taxa. A original passa para ESTORNADA. Usa a variável transferenciaId, preenchida pela requisição de transferência.\n\n201 estorno criado\n200 Idempotency-Key já usada com o mesmo corpo\n400 CORPO_INVALIDO, IDEMPOTENCY_KEY_AUSENTE, IDEMPOTENCY_KEY_INVALIDA\n404 TRANSFERENCIA_NAO_ENCONTRADA\n409 TRANSICAO_DE_ESTADO_INVALIDA, ESTORNO_NAO_PERMITIDO, CONTA_ENCERRADA, IDEMPOTENCY_KEY_REUTILIZADA, CONFLITO_DE_CONCORRENCIA\n422 SALDO_INSUFICIENTE",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"motivo\": \"Pedido do usuário\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/transferencias/:id/estorno",
+              "host": ["{{baseUrl}}"],
+              "path": ["transferencias", ":id", "estorno"],
+              "variable": [
+                { "key": "id", "value": "{{transferenciaId}}" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Agendamentos",
+      "description": "Transferências agendadas",
+      "item": [
+        {
+          "name": "Agenda uma transferência",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const daquiAUmaHora = new Date(Date.now() + 60 * 60 * 1000);",
+                  "pm.collectionVariables.set('executarEm', daquiAUmaHora.toISOString());"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "description": "Nenhum dinheiro sai no agendamento. Saldo e limite são verificados na hora da execução. A variável executarEm é preenchida antes do envio com a data de uma hora à frente.\n\n201 agendamento criado com estado AGENDADO\n200 Idempotency-Key já usada com o mesmo corpo\n400 CORPO_INVALIDO, IDEMPOTENCY_KEY_AUSENTE, IDEMPOTENCY_KEY_INVALIDA\n404 CONTA_NAO_ENCONTRADA\n409 CONTAS_IGUAIS, CONTA_DO_SISTEMA, IDEMPOTENCY_KEY_REUTILIZADA\n422 DATA_DE_EXECUCAO_INVALIDA, VALOR_INVALIDO",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"contaOrigem\": \"CONTA-001\",\n  \"contaDestino\": \"CONTA-002\",\n  \"valor\": 150.00,\n  \"executarEm\": \"{{executarEm}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/transferencias-agendadas",
+              "host": ["{{baseUrl}}"],
+              "path": ["transferencias-agendadas"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Resumo",
+      "description": "Indicadores gerais do sistema",
+      "item": [
+        {
+          "name": "Resumo do sistema",
+          "request": {
+            "method": "GET",
+            "description": "Campos terminados em Agora refletem o estado atual. Campos terminados em NaJanela consideram transferências criadas nos últimos janelaMinutos.\n\n200 resumo calculado\n400 PARAMETRO_INVALIDO",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/resumo?janelaMinutos=60",
+              "host": ["{{baseUrl}}"],
+              "path": ["resumo"],
+              "query": [
+                { "key": "janelaMinutos", "value": "60" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Dados",
+      "description": "Uso apenas em desenvolvimento e teste",
+      "item": [
+        {
+          "name": "Restaura a carga inicial",
+          "request": {
+            "method": "DELETE",
+            "description": "Apaga movimentos, transferências, agendamentos e chaves de idempotência e recria as contas iniciais.\n\n200 dados restaurados",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/dados",
+              "host": ["{{baseUrl}}"],
+              "path": ["dados"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Actuator",
+      "description": "Endpoints de monitoramento. Não fazem parte do OpenAPI da aplicação.",
+      "item": [
+        {
+          "name": "Conflitos de concorrência",
+          "request": {
+            "method": "GET",
+            "description": "Contador contas.conflitos.concorrencia. Os filtros por endpoint e recurso estão desabilitados; habilite para filtrar. Valores de recurso: conta, transferencia, idempotency-key, banco.\n\nO contador só passa a existir depois do primeiro conflito registrado. Antes disso, a resposta é 404.",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/metrics/contas.conflitos.concorrencia",
+              "host": ["{{baseUrl}}"],
+              "path": ["actuator", "metrics", "contas.conflitos.concorrencia"],
+              "query": [
+                { "key": "tag", "value": "endpoint:POST /transferencias", "disabled": true },
+                { "key": "tag", "value": "recurso:conta", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["actuator", "health"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
