@@ -12,7 +12,7 @@ Fiz esse projeto como resolução de um desafio técnico focado em consistência
 - Spring Boot 3.x (Web, Data JPA, Validation)
 - PostgreSQL 16
 - Flyway (para as migrations)
-- springdoc-openapi
+- springdoc-openapi(Swagger-API)
 - Docker Compose
 - JUnit 5 e Mockito
 
